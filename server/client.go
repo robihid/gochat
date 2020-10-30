@@ -4,7 +4,7 @@ import (
 	"log"
 
 	"github.com/gorilla/websocket"
-	r "gopkg.in/rethinkdb/rethinkdb-go.v5"
+	rdb "github.com/rethinkdb/rethinkdb-go"
 )
 
 type FindHandler func(string) (Handler, bool)
@@ -13,62 +13,16 @@ type Client struct {
 	send         chan Message
 	socket       *websocket.Conn
 	findHandler  FindHandler
-	session      *r.Session
+	session      *rdb.Session
 	stopChannels map[int]chan bool
 	id           string
-	userName     string
+	username     string
 }
 
-func (c *Client) NewStopChannel(stopKey int) chan bool {
-	c.StopForKey(stopKey)
-	stop := make(chan bool)
-	c.stopChannels[stopKey] = stop
-	return stop
-}
-
-func (c *Client) StopForKey(key int) {
-	if ch, found := c.stopChannels[key]; found {
-		ch <- true
-		delete(c.stopChannels, key)
-	}
-}
-
-func (c *Client) Read() {
-	var message Message
-	for {
-		if err := c.socket.ReadJSON(&message); err != nil {
-			break
-		}
-		if handler, found := c.findHandler(message.Name); found {
-			handler(c, message.Data)
-		}
-	}
-	c.socket.Close()
-}
-
-func (c *Client) Write() {
-	for msg := range c.send {
-		if err := c.socket.WriteJSON(msg); err != nil {
-			break
-		}
-	}
-	c.socket.Close()
-}
-
-func (c *Client) Close() {
-	for _, ch := range c.stopChannels {
-		ch <- true
-	}
-	close(c.send)
-	// delete user
-	r.Table("user").Get(c.id).Delete().Exec(c.session)
-}
-
-func NewClient(socket *websocket.Conn, findHandler FindHandler,
-	session *r.Session) *Client {
+func NewClient(socket *websocket.Conn, findHandler FindHandler, session *rdb.Session) *Client {
 	var user User
 	user.Name = "anonymous"
-	res, err := r.Table("user").Insert(user).RunWrite(session)
+	res, err := rdb.Table("user").Insert(user).RunWrite(session)
 	if err != nil {
 		log.Println(err.Error())
 	}
@@ -83,6 +37,50 @@ func NewClient(socket *websocket.Conn, findHandler FindHandler,
 		session:      session,
 		stopChannels: make(map[int]chan bool),
 		id:           id,
-		userName:     user.Name,
+		username:     user.Name,
 	}
+}
+
+func (client *Client) StopForKey(key int) {
+	if ch, found := client.stopChannels[key]; found {
+		ch <- true
+		delete(client.stopChannels, key)
+	}
+}
+
+func (client *Client) NewStopChannel(key int) chan bool {
+	client.StopForKey(key)
+	stop := make(chan bool)
+	client.stopChannels[key] = stop
+	return stop
+}
+
+func (client *Client) Read() {
+	var message Message
+	for {
+		if err := client.socket.ReadJSON(&message); err != nil {
+			break
+		}
+		if handler, found := client.findHandler(message.Name); found {
+			handler(client, message.Data)
+		}
+	}
+	client.socket.Close()
+}
+
+func (client *Client) Write() {
+	for message := range client.send {
+		if err := client.socket.WriteJSON(message); err != nil {
+			break
+		}
+	}
+	client.socket.Close()
+}
+
+func (client *Client) Close() {
+	for _, ch := range client.stopChannels {
+		ch <- true
+	}
+	close(client.send)
+	rdb.Table("user").Get(client.id).Delete().Exec(client.session)
 }

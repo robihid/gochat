@@ -1,18 +1,19 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
+	"os"
 
-	r "gopkg.in/rethinkdb/rethinkdb-go.v5"
+	rdb "github.com/rethinkdb/rethinkdb-go"
 )
 
 func main() {
-	session, err := r.Connect(r.ConnectOpts{
-		Address:  "localhost:28015",
-		Database: "gochat",
+	session, err := rdb.Connect(rdb.ConnectOpts{
+		Address:  fmt.Sprintf("%s:%s", os.Getenv("DB_URL"), "28015"),
+		Database: os.Getenv("DB_NAME"),
 	})
-
 	if err != nil {
 		log.Panic(err.Error())
 	}
@@ -30,6 +31,7 @@ func main() {
 	router.Handle("message add", addChannelMessage)
 	router.Handle("message subscribe", subscribeChannelMessage)
 	router.Handle("message unsubscribe", unsubscribeChannelMessage)
+
 	http.Handle("/", router)
 	http.ListenAndServe(":4000", nil)
 }
