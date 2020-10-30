@@ -20,7 +20,7 @@ class App extends Component {
   }
 
   componentDidMount() {
-    let ws = new WebSocket(`wss://${process.env.REACT_APP_SERVER_ADDRESS}`);
+    let ws = new WebSocket(process.env.REACT_APP_SERVER_URL);
     let socket = (this.socket = new Socket(ws));
     socket.on('connect', this.onConnect);
     socket.on('disconnect', this.onDisconnect);
